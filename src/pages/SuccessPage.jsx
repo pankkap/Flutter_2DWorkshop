@@ -13,6 +13,30 @@ function SuccessPage() {
   const [syncing, setSyncing] = useState(false)
 
   useEffect(() => {
+    const txId = location.state?.transactionId || 'success'
+    const sentKey = `email_sent_${txId}`
+    if (paymentUpdated && !sessionStorage.getItem(sentKey)) {
+      sessionStorage.setItem(sentKey, 'true')
+      const form = location.state?.formData || {}
+      fetch('https://formsubmit.co/ajax/betalabsindia@gmail.com', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+          _subject: `🎉 New Workshop Registration: ${form.name || 'Student'} (Paid)`,
+          'Student Name': form.name || 'N/A',
+          'Student Email': form.email || 'N/A',
+          'Student Phone': form.phone || 'N/A',
+          'Payment Status': 'SUCCESS (Paid)',
+          'Payment ID': location.state?.transactionId || 'N/A',
+          'Registration ID': location.state?.registrationId || 'N/A',
+          'Date & Time': new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+        }),
+      }).catch((err) => console.error('[Email Notification Error]', err))
+    }
+
     if (synced) return
 
     const pending = localStorage.getItem(PENDING_PAYMENT_UPDATE_KEY)

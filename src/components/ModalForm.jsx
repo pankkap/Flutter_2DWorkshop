@@ -209,6 +209,7 @@ function ModalForm({ open, onClose, resumePayment }) {
             paymentSynced: success,
             registrationId,
             transactionId: response.razorpay_payment_id,
+            formData: form,
           },
         })
 
