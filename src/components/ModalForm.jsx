@@ -1,0 +1,355 @@
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { doc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
+import { db } from '../lib/firebaseClient'
+
+const PAYMENT_AMOUNT = 50
+const initialForm = { name: '', email: '', phone: '' }
+const PENDING_REGISTRATION_KEY = 'pending_registration_id'
+const PENDING_PAYMENT_UPDATE_KEY = 'pending_payment_update'
+// Razorpay test payment-link reference: https://rzp.io/rzp/ebTYN8xo
+const RAZORPAY_CHECKOUT_SCRIPT = 'https://checkout.razorpay.com/v1/checkout.js'
+const RAZORPAY_KEY_ID = import.meta.env.VITE_RAZORPAY_KEY_ID
+
+const retryFirestoreUpdate = async (registrationId, updateData, maxRetries = 4) => {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await updateDoc(doc(db, 'registrations', registrationId), {
+        ...updateData,
+        updated_at: serverTimestamp(),
+      })
+      console.log(`[Payment] Firestore update attempt ${attempt} — success`)
+      return { success: true }
+    } catch (err) {
+      console.log(`[Payment] DB update attempt ${attempt} — exception:`, err)
+    }
+    if (attempt < maxRetries) await new Promise((r) => setTimeout(r, 800 * attempt))
+  }
+  return { success: false }
+}
+
+const loadRazorpayScript = () => new Promise((resolve) => {
+  if (window.Razorpay) {
+    resolve(true)
+    return
+  }
+
+  const script = document.createElement('script')
+  script.src = RAZORPAY_CHECKOUT_SCRIPT
+  script.async = true
+  script.onload = () => resolve(true)
+  script.onerror = () => resolve(false)
+  document.body.appendChild(script)
+})
+
+function ModalForm({ open, onClose, resumePayment }) {
+  const [form, setForm] = useState(initialForm)
+  const [errors, setErrors] = useState({})
+  const [loading, setLoading] = useState(false)
+  const [step, setStep] = useState(1)          // 1 = form, 2 = payment
+  const [registrationId, setRegistrationId] = useState(null)
+  const [verifyingPayment, setVerifyingPayment] = useState(false)
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+
+    // Only auto-resume to Step 2 if explicitly redirected back (e.g. after page reload)
+    if (resumePayment?.registrationId) {
+      setStep(2)
+      setRegistrationId(resumePayment.registrationId)
+      return
+    }
+
+    // Always show the form (Step 1) so student info is always collected fresh
+    setStep(1)
+    setForm(initialForm)
+    setErrors({})
+    setRegistrationId(null)
+  }, [open, resumePayment])
+
+  if (!open) return null
+
+  const handleClose = () => {
+    setStep(1)
+    setForm(initialForm)
+    setErrors({})
+    setRegistrationId(null)
+    setVerifyingPayment(false)
+    onClose()
+  }
+
+  const validate = () => {
+    const next = {}
+    if (!form.name.trim()) next.name = 'Name is required'
+    if (!/^\S+@\S+\.\S+$/.test(form.email)) next.email = 'Enter a valid email'
+    if (!/^[0-9]{10}$/.test(form.phone)) next.phone = 'Enter a valid 10-digit phone number'
+    setErrors(next)
+    return Object.keys(next).length === 0
+  }
+
+  const handleSubmit = async (event) => {
+    event.preventDefault()
+    if (!validate()) return
+    try {
+      setLoading(true)
+      const newRegistrationId = crypto.randomUUID()
+      await setDoc(doc(db, 'registrations', newRegistrationId), {
+        id: newRegistrationId,
+        name: form.name.trim(),
+        email: form.email.trim().toLowerCase(),
+        phone: form.phone.trim(),
+        amount: PAYMENT_AMOUNT,
+        payment_status: 'pending',
+        payment_review_status: 'pending',
+        razorpay_payment_id: null,
+        razorpay_order_id: null,
+        razorpay_signature: null,
+        paid_at: null,
+        created_at: serverTimestamp(),
+        updated_at: serverTimestamp(),
+      })
+
+      localStorage.setItem(PENDING_REGISTRATION_KEY, newRegistrationId)
+      setRegistrationId(newRegistrationId)
+      setStep(2)
+    } catch (error) {
+      setErrors({
+        submit: error.message || 'Failed to save details. Please try again.',
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleOpenRazorpayCheckout = async () => {
+    if (!registrationId) {
+      setErrors((prev) => ({
+        ...prev,
+        payment: 'Payment session not found. Please submit the form again.',
+      }))
+      setStep(1)
+      return
+    }
+
+    if (!RAZORPAY_KEY_ID) {
+      setErrors((prev) => ({
+        ...prev,
+        payment: 'Razorpay key is missing. Please set VITE_RAZORPAY_KEY_ID in frontend .env.',
+      }))
+      return
+    }
+
+    setVerifyingPayment(true)
+    setErrors((prev) => ({ ...prev, payment: undefined }))
+
+    const isCheckoutLoaded = await loadRazorpayScript()
+
+    if (!isCheckoutLoaded || !window.Razorpay) {
+      setErrors((prev) => ({
+        ...prev,
+        payment: 'Unable to load Razorpay checkout. Please check your internet and try again.',
+      }))
+      setVerifyingPayment(false)
+      return
+    }
+
+    const options = {
+      key: RAZORPAY_KEY_ID,
+      amount: PAYMENT_AMOUNT * 100,
+      currency: 'INR',
+      name: '2-Days Flutter Mobile App Development',
+      description: 'Workshop Registration Ticket',
+      prefill: {
+        name: form.name || undefined,
+        email: form.email || undefined,
+        contact: form.phone || undefined,
+      },
+      notes: {
+        registration_id: registrationId,
+      },
+      theme: {
+        color: '#4F46E5',
+      },
+      modal: {
+        ondismiss: () => {
+          setVerifyingPayment(false)
+        },
+      },
+      handler: async (response) => {
+        const updateData = {
+          payment_status: 'paid',
+          razorpay_payment_id: response.razorpay_payment_id,
+          razorpay_order_id: response.razorpay_order_id || null,
+          razorpay_signature: response.razorpay_signature || null,
+          paid_at: new Date().toISOString(),
+        }
+
+        // Save payment data to localStorage so SuccessPage can retry if fetch fails here
+        localStorage.setItem(PENDING_PAYMENT_UPDATE_KEY, JSON.stringify({
+          registrationId,
+          updateData,
+        }))
+
+        console.log('[Payment] Handler fired. registrationId:', registrationId, 'paymentId:', response.razorpay_payment_id)
+
+        const { success } = await retryFirestoreUpdate(registrationId, updateData)
+        console.log('[Payment] Firestore update success:', success)
+
+        if (success) {
+          localStorage.removeItem(PENDING_REGISTRATION_KEY)
+          localStorage.removeItem(PENDING_PAYMENT_UPDATE_KEY)
+        }
+
+        navigate('/success', {
+          state: {
+            paymentUpdated: true,
+            paymentSynced: success,
+            registrationId,
+            transactionId: response.razorpay_payment_id,
+          },
+        })
+
+        setVerifyingPayment(false)
+      },
+    }
+
+    const razorpay = new window.Razorpay(options)
+    razorpay.on('payment.failed', (event) => {
+      setErrors((prev) => ({
+        ...prev,
+        payment: event.error?.description || 'Payment failed. Please try again.',
+      }))
+      setVerifyingPayment(false)
+    })
+
+    razorpay.open()
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-gray-950/70 px-4 backdrop-blur-sm"
+      onClick={(e) => { if (e.target === e.currentTarget) handleClose() }}
+    >
+      <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+
+        {/* header */}
+        <div className="relative bg-indigo-600 px-6 py-5 text-center">
+          <button
+            type="button"
+            onClick={handleClose}
+            className="absolute right-5 top-5 grid h-7 w-7 place-items-center rounded-full bg-white/10 text-white transition hover:bg-white/20"
+            aria-label="Close"
+          >
+            ✕
+          </button>
+          <div className="mx-auto max-w-sm">
+            <p className="text-xs font-semibold uppercase tracking-widest text-indigo-200">
+              {step === 1 ? `Workshop Ticket — ₹${PAYMENT_AMOUNT}` : 'Complete Payment'}
+            </p>
+            <h3 className="mt-1 text-3xl font-extrabold text-white">
+              {step === 1 ? 'Reserve Your Seat' : `Scan & Pay ₹${PAYMENT_AMOUNT}`}
+            </h3>
+            <div className="mt-3 w-full rounded-xl border border-white/20 bg-white/10 px-3 py-2 shadow-[0_10px_30px_-18px_rgba(0,0,0,0.45)] backdrop-blur-sm">
+              <p className="text-center text-sm font-semibold leading-6 text-white">
+                Pay ₹{PAYMENT_AMOUNT} now • 2-Days Live Masterclass (4 Hours)
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* STEP 1 — registration form */}
+        {step === 1 && (
+          <form onSubmit={handleSubmit} className="space-y-4 p-6">
+            <div>
+              <label htmlFor="name" className="mb-1 block text-sm font-medium text-gray-700">Full Name</label>
+              <input
+                id="name"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="Enter Your Name"
+                className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+              />
+              {errors.name && <p className="mt-1 text-xs text-red-500">{errors.name}</p>}
+            </div>
+
+            <div>
+              <label htmlFor="email" className="mb-1 block text-sm font-medium text-gray-700">Email Address</label>
+              <input
+                id="email"
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                placeholder="you@example.com"
+                className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+              />
+              {errors.email && <p className="mt-1 text-xs text-red-500">{errors.email}</p>}
+            </div>
+
+            <div>
+              <label htmlFor="phone" className="mb-1 block text-sm font-medium text-gray-700">Phone Number</label>
+              <input
+                id="phone"
+                type="tel"
+                value={form.phone}
+                onChange={(e) => setForm({ ...form, phone: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+                placeholder="10-digit mobile number"
+                className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+              />
+              {errors.phone && <p className="mt-1 text-xs text-red-500">{errors.phone}</p>}
+            </div>
+
+            {errors.submit && (
+              <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{errors.submit}</p>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-lg bg-indigo-600 py-3.5 text-sm font-bold text-white transition hover:bg-indigo-700 disabled:opacity-60"
+            >
+              {loading ? 'Saving...' : 'Continue to Payment →'}
+            </button>
+          </form>
+        )}
+
+        {/* STEP 2 — Razorpay checkout */}
+        {step === 2 && (
+          <div className="flex flex-col items-center gap-4 p-6 text-center">
+            <p className="text-sm text-gray-600">
+              Click the button below to open Razorpay checkout and complete payment securely.
+            </p>
+
+            <button
+              type="button"
+              onClick={handleOpenRazorpayCheckout}
+              disabled={verifyingPayment}
+              className="w-full rounded-lg bg-indigo-600 py-3.5 text-sm font-bold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {verifyingPayment ? 'Opening Razorpay...' : `Pay Rs ${PAYMENT_AMOUNT} with Razorpay`}
+            </button>
+
+            {errors.payment && <p className="w-full rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{errors.payment}</p>}
+
+            <button
+              type="button"
+              onClick={handleClose}
+              className="w-full rounded-lg border border-gray-300 py-3 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+
+            <p className="text-xs text-gray-400">
+              Transaction ID will be captured automatically after successful payment.
+            </p>
+          </div>
+        )}
+
+      </div>
+    </div>
+  )
+}
+
+export default ModalForm
