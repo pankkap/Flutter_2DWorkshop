@@ -44,7 +44,7 @@ function Pricing({ onReserve }) {
             <div className="rounded-lg border border-amber-400/30 bg-amber-50 px-4 py-3">
               <p className="text-center text-sm leading-relaxed text-amber-800">
                 <span className="font-bold">Register now at ₹50</span> for first 100 attendees.
-                <span className="block mt-1 text-xs font-semibold text-amber-900">(Previous Workshop Value: ₹15,000)</span>
+                <span className="block mt-1 text-xs font-semibold text-amber-900">(Previous Workshop Value: ₹2500</span>
               </p>
             </div>
 

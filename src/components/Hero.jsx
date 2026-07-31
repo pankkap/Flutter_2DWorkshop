@@ -92,7 +92,7 @@ function Hero({ onReserve }) {
             <div className="w-full rounded-xl border border-red-400/70 bg-gradient-to-r from-red-600 to-rose-600 px-5 py-3.5 text-left shadow-[0_0_28px_rgba(239,68,68,0.45)] lg:max-w-xl">
               <p className="text-sm leading-relaxed text-white sm:text-[15px]">
                 <span className="font-bold text-white">🔥 Special Ad Offer: Reserve your workshop seat at ₹50 Today!</span>{' '}
-                <span className="block mt-0.5 text-xs text-rose-100">Only for the first 100 registrations. (Previous Masterclass Fee: <span className="line-through text-amber-200">₹15,000</span>)</span>
+                <span className="block mt-0.5 text-xs text-rose-100">Only for the first 100 registrations. (Previous Masterclass Fee: <span className="line-through text-amber-200">₹2500</span>)</span>
               </p>
             </div>
 
@@ -100,7 +100,7 @@ function Hero({ onReserve }) {
             <div className="flex flex-wrap items-center gap-4 pt-2 lg:hidden">
               <div>
                 <p className="text-3xl font-extrabold">₹50</p>
-                <p className="text-sm text-gray-400 line-through">₹15,000</p>
+                <p className="text-sm text-gray-400 line-through">₹2500</p>
               </div>
               <CTAButton label="Book Workshop Seat — ₹50" onClick={onReserve} className="px-8 py-3.5 text-base" />
             </div>
@@ -113,7 +113,7 @@ function Hero({ onReserve }) {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-3xl font-extrabold text-white">₹50</p>
-                    <p className="mt-0.5 text-sm text-gray-400 line-through">₹15,000</p>
+                    <p className="mt-0.5 text-sm text-gray-400 line-through">₹2500</p>
                     <span className="mt-1.5 inline-block rounded bg-red-500/20 px-2 py-0.5 text-xs font-bold text-red-400">
                       Limited Ad Offer — First 100 Seats
                     </span>
