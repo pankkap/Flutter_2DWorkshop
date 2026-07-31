@@ -22,8 +22,8 @@ function Footer() {
             <p className="text-base font-bold text-white">Beta-Labs — 2-Days Flutter Mobile App Development</p>
           </div>
           <p className="mt-[2px] text-xs text-indigo-400">An Innovation with AI</p>
-          <p className="mt-3 text-sm text-gray-300">Email: betalabsindia@gmail.com</p>
-          <p className="mt-1 text-sm text-gray-300">Mobile: +91 9729280731, 9466585014</p>
+          <p className="mt-3 text-sm text-gray-300">Email: info@beta-labs.in</p>
+          <p className="mt-1 text-sm text-gray-300">Mobile: +91 9729280731</p>
           <p className="mt-1 text-xs text-gray-400">Knowledge Park II, Greater Noida, UP</p>
           <p className="mt-2 text-xs text-gray-500">
             © {new Date().getFullYear()} Beta-Labs. All rights reserved.
