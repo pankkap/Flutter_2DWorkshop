@@ -1,55 +1,65 @@
 import { useEffect, useState } from 'react'
-import { doc, increment, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
 import { Eye } from 'lucide-react'
-import { db } from '../lib/firebaseClient'
+
+const NAMESPACE = 'betalabs_flutter_workshop_2026'
+const KEY = 'visitors'
+const INCREMENT_URL = `https://api.counterapi.dev/v1/${NAMESPACE}/${KEY}/up`
+const GET_URL = `https://api.counterapi.dev/v1/${NAMESPACE}/${KEY}`
+
+// Starting offset so the counter begins from 10
+const BASE_OFFSET = 9
 
 export default function VisitorCounter() {
-  const [count, setCount] = useState(null)
+  const [count, setCount] = useState(() => {
+    const cached = localStorage.getItem('cached_global_visitor_count')
+    return cached ? parseInt(cached, 10) : 1
+  })
 
   useEffect(() => {
-    const SESSION_KEY = 'beta_labs_visited_session'
-    const hasCounted = sessionStorage.getItem(SESSION_KEY)
-    const docRef = doc(db, 'stats', 'visitors')
+    let isMounted = true
 
-    // Increment count if visitor hasn't visited in this session
-    if (!hasCounted) {
-      sessionStorage.setItem(SESSION_KEY, 'true')
-      setDoc(docRef, { count: increment(1), lastVisited: serverTimestamp() }, { merge: true })
-        .catch((err) => {
-          console.warn('[VisitorCounter] Failed to increment visitor counter in Firestore:', err)
+    async function syncVisitorCount() {
+      const SESSION_KEY = 'beta_labs_visited_session'
+      const hasVisited = sessionStorage.getItem(SESSION_KEY)
+
+      const targetUrl = !hasVisited ? INCREMENT_URL : GET_URL
+
+      try {
+        const response = await fetch(targetUrl)
+        if (response.ok) {
+          const data = await response.json()
+          if (typeof data?.count === 'number' && isMounted) {
+            setCount(data.count)
+            if (!hasVisited) {
+              sessionStorage.setItem(SESSION_KEY, 'true')
+            }
+            localStorage.setItem('cached_global_visitor_count', String(data.count))
+            return
+          }
+        }
+      } catch (err) {
+        console.warn('[VisitorCounter] Counter API warning:', err)
+      }
+
+      // If API request fails, increment local count so UI stays smooth
+      if (isMounted && !hasVisited) {
+        sessionStorage.setItem(SESSION_KEY, 'true')
+        setCount((prev) => {
+          const next = (prev || 1) + 1
+          localStorage.setItem('cached_global_visitor_count', String(next))
+          return next
         })
+      }
     }
 
-    // Subscribe to live total count update
-    const unsubscribe = onSnapshot(
-      docRef,
-      (snapshot) => {
-        if (snapshot.exists()) {
-          const data = snapshot.data()
-          if (typeof data?.count === 'number') {
-            setCount(data.count)
-          } else {
-            setCount(1)
-          }
-        } else {
-          // If doc doesn't exist yet, initialize it
-          setDoc(docRef, { count: 1, lastVisited: serverTimestamp() }, { merge: true })
-            .then(() => setCount(1))
-            .catch((err) => console.warn('[VisitorCounter] Failed to create visitors doc:', err))
-        }
-      },
-      (err) => {
-        console.warn('[VisitorCounter] Firestore snapshot error:', err)
-        // Graceful fallback to local counter if Firestore rules/connection prevent access
-        const stored = localStorage.getItem('local_visitor_count')
-        const currentCount = stored ? parseInt(stored, 10) + 1 : 1
-        localStorage.setItem('local_visitor_count', String(currentCount))
-        setCount(currentCount)
-      }
-    )
+    syncVisitorCount()
 
-    return () => unsubscribe()
+    return () => {
+      isMounted = false
+    }
   }, [])
+
+  const displayCount = (count !== null ? count : 1) + BASE_OFFSET
 
   return (
     <div className="mt-4 flex items-center">
@@ -62,7 +72,7 @@ export default function VisitorCounter() {
         <span className="font-medium text-gray-300">
           Website Visitors:{' '}
           <span className="font-bold text-white">
-            {count !== null ? count.toLocaleString() : '...'}
+            {displayCount.toLocaleString()}
           </span>
         </span>
       </div>
