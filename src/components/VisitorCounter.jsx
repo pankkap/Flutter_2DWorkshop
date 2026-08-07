@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react'
 import { Eye } from 'lucide-react'
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
-import { db } from '../lib/firebaseClient'
 
 const NAMESPACE = 'betalabs_flutter_workshop_2026'
 const KEY = 'visitors'
@@ -26,15 +24,6 @@ export default function VisitorCounter() {
         : `https://api.counterapi.dev/v1/${NAMESPACE}/${KEY}`
 
       const targetUrl = `${baseUrl}?t=${timestamp}`
-
-      // Proactively log visit to Firestore registrations collection (publicly writable)
-      if (!hasVisited) {
-        addDoc(collection(db, 'registrations'), {
-          type: 'site_visitor_log',
-          user_agent: navigator.userAgent,
-          created_at: serverTimestamp(),
-        }).catch((err) => console.warn('[VisitorCounter] Firestore log note:', err))
-      }
 
       try {
         const response = await fetch(targetUrl, { cache: 'no-store' })

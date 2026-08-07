@@ -47,9 +47,32 @@ function AdminPage() {
       const unsubscribe = onSnapshot(
         registrationsQuery,
         (snapshot) => {
-          const registrations = snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }))
-          setPaidRegistrations(registrations)
+          const validRegistrations = []
+          const invalidDocIds = []
+
+          snapshot.docs.forEach((entry) => {
+            const data = entry.data()
+            const isVisitorLog = data.type === 'site_visitor_log'
+            const isBlankData = !data.name && !data.email && !data.phone
+
+            if (isVisitorLog || isBlankData) {
+              invalidDocIds.push(entry.id)
+            } else {
+              validRegistrations.push({ id: entry.id, ...data })
+            }
+          })
+
+          setPaidRegistrations(validRegistrations)
           setTableLoading(false)
+
+          // Purge visitor log / blank documents from Firestore
+          if (invalidDocIds.length > 0) {
+            invalidDocIds.forEach((id) => {
+              deleteDoc(doc(db, 'registrations', id)).catch((err) => {
+                console.warn(`[Admin] Cleanup warning for blank doc ${id}:`, err)
+              })
+            })
+          }
         },
         (error) => {
           setAuthError(error.message || 'Failed to load registrations.')
