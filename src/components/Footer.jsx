@@ -1,3 +1,5 @@
+import VisitorCounter from './VisitorCounter'
+
 function FlutterLogo({ className = 'h-5 w-5' }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -28,6 +30,7 @@ function Footer() {
           <p className="mt-2 text-xs text-gray-500">
             © {new Date().getFullYear()} Beta-Labs. All rights reserved.
           </p>
+          <VisitorCounter />
         </div>
 
         {/* nav */}
